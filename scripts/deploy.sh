@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+#
+# deploy.sh — deploy Recant and leave real consensus evidence on the explorer.
+#
+#   ./scripts/deploy.sh studionet
+#
+# A contract page showing only a deploy transaction proves the file compiles and
+# nothing else. This deploys AND exercises the contract, so the explorer shows
+# method calls with the leader's proposal and the validators' votes beside them.
+#
+# It also deliberately leaves a REFUSAL on chain. A page showing only successes
+# is a weaker demonstration than one showing the primitive decline to answer.
+#
+# Requires: npm i -g genlayer
+
+set -euo pipefail
+cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+NETWORK="${1:-studionet}"
+gold() { printf '\033[33m%s\033[0m\n' "$*"; }
+dim()  { printf '\033[2m%s\033[0m\n' "$*"; }
+
+gold "Recant → $NETWORK"
+genlayer network "$NETWORK"
+
+dim "linting"
+genvm-lint contracts/recant.py
+
+ADDR=$(genlayer deploy --contract contracts/recant.py --args '[]' \
+       | grep -oE '0x[0-9a-fA-F]{40}' | head -1)
+gold "deployed at $ADDR"
+
+dim "register()  open a record"
+genlayer write "$ADDR" register --args '["Example Org"]' >/dev/null
+
+dim "state()     three statements, the third fights the first"
+genlayer write "$ADDR" state --args '[0,"We will never sell or share user data with any third party."]' >/dev/null
+genlayer write "$ADDR" state --args '[0,"Our uptime target for the coming year is ninety nine percent."]' >/dev/null
+genlayer write "$ADDR" state --args '[0,"We share user data with selected commercial partners."]' >/dev/null
+
+dim "check(0)    first statement: clear by construction, no inference spent"
+genlayer write "$ADDR" check --args '[0]'
+
+dim "check(1)    unrelated subject, expected clear"
+genlayer write "$ADDR" check --args '[1]'
+
+dim "check(2)    THE ONE THAT MATTERS -- expected contradicts, naming statement 0"
+genlayer write "$ADDR" check --args '[2]'
+
+dim "latest(2)   the verdict and the statement it fights"
+genlayer call "$ADDR" latest --args '[2]'
+
+dim "consistency() the rate this contract exists to publish"
+genlayer call "$ADDR" consistency --args '[0]'
+
+# --- and now the refusal path, on chain -----------------------------------
+dim "withdraw(0) the author takes the original commitment back"
+genlayer write "$ADDR" withdraw --args '[0]' >/dev/null
+
+dim "state()     say it again, now that the original is withdrawn"
+genlayer write "$ADDR" state --args '[0,"We share user data with commercial partners under contract."]' >/dev/null
+
+dim "check(3)    expected STALE -- it fights only a withdrawn statement"
+genlayer write "$ADDR" check --args '[3]'
+genlayer call "$ADDR" latest --args '[3]'
+
+cat <<TXT
+
+  Contract:  $ADDR
+  Explorer:  https://explorer-studio.genlayer.com/address/$ADDR
+
+Open that page before submitting. It must show a Deploy transaction AND method
+calls with a Consensus Result beside them.
+
+Both paths should be on chain: statement 2 resolved contradicts, statement 3
+came back stale.
+
+Then paste the address into README.md and SUBMISSION.md where {address} appears.
+
+TXT
