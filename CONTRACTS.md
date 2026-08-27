@@ -68,11 +68,14 @@ for collections. A `Statement` carries the `author_id` it belongs to.
 |---|---|---|
 | `authors` | `DynArray[Author]` | append only |
 | `statements` | `DynArray[Statement]` | flat, each carries `author_id` |
-| `Author.registrar` | `Address` | the only account that may withdraw |
+| `delegates` | `DynArray[Delegate]` | flat, each carries `author_id` |
+| `Author.registrar` | `Address` | owns the record. The identity, not the label |
 | `Author.n_clear` … `n_stale` | `u256` | counters for `consistency()` |
+| `Statement.by` | `Address` | the account that submitted this statement |
 | `Statement.withdrawn` | `bool` | never deleted |
 | `Statement.against` | `str` | pipe-joined statement ids |
 | `Statement.why` | `str` | leader supplied, sanitised, **not** consensus |
+| `Delegate.active` | `bool` | cleared on revoke, the row is kept |
 
 ### Scope
 
@@ -88,19 +91,57 @@ The cap is stated rather than hidden. An unbounded prompt is an unbounded cost
 and an eventual failure; quietly truncating without saying so would be worse
 than the cap.
 
+## Authority
+
+A verdict about an author is worth exactly as much as the record it was computed
+from, so the record must be the author's own. `register()` sets
+`Author.registrar` to the caller and that address is the identity; `label` is a
+display string and proves nothing about who typed it.
+
+| Call | Who | Why |
+|---|---|---|
+| `register` | anyone | there is no earlier owner to check against |
+| `state` | registrar or active delegate | see below |
+| `authorise` / `revoke` | registrar | otherwise one delegation takes the record over |
+| `withdraw` | registrar | withdrawing rewrites what later checks mean |
+| `check` | anyone | an author who chose which statements got audited would audit only the flattering ones |
+
+`state()` carries the weight. The scope a later statement is checked against,
+its verdict, and the `consistency()` figure published about the author are all
+computed from the rows `state()` writes, so an unauthenticated write there is a
+forged premise for every conclusion downstream — and a planted sentence reads
+exactly like a real one.
+
+A delegate may speak on a record but may not retract from it, authorise anybody
+else, or revoke anybody. Revoking clears `active` and keeps the row, so a former
+delegate stays visible, and statements a delegate already made stay on the
+record still naming the address that made them.
+
+`Statement.by` records the submitting account on every row, so delegation is
+readable rather than implied. A consuming contract should bind to
+`registrar(author_id)`, never to the label.
+
+Delegates are capped at **16 active per record**, because `state()` scans them
+on every call and an unbounded list is an unbounded scan.
+
 ## API
 
 ```python
-register(label: str)
-state(author_id: u256, text: str)
-withdraw(statement_id: u256)
-check(statement_id: u256)
+register(label: str)                      # anyone. caller becomes registrar
+state(author_id: u256, text: str)         # registrar or authorised delegate
+authorise(author_id: u256, who: str)      # registrar only
+revoke(author_id: u256, who: str)         # registrar only
+withdraw(statement_id: u256)              # registrar only
+check(statement_id: u256)                 # anyone, deliberately
 
 verdict(statement_id)   -> str
 against(statement_id)   -> str
 latest(statement_id)    -> dict
 record(author_id)       -> dict
 consistency(author_id)  -> dict
+registrar(author_id)    -> str
+may_state(author_id, who: str) -> bool
+delegation(author_id)   -> dict
 count() / statement_count() -> u256
 ```
 

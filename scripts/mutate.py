@@ -134,6 +134,84 @@ MUTATIONS = [
         "        if bool(s.withdrawn):\n            raise gl.vm.UserError(\"already withdrawn\")\n",
         "",
     ),
+    # -- authority. The rejection that made this section exist: state() shipped
+    # -- with no sender check at all, so any account could put words on any
+    # -- record. Every defence added in response gets a mutation here.
+    (
+        "state left unauthenticated, so anyone may write to any record",
+        "        if not self._may_state(author_id, a, gl.message.sender_address):\n"
+        "            raise gl.vm.UserError(\n"
+        "                \"only the registrar or an authorised delegate may add to this record\"\n"
+        "            )\n",
+        "",
+    ),
+    (
+        "the submitting address not recorded on the statement",
+        "                by=gl.message.sender_address,\n",
+        "                by=a.registrar,\n",
+    ),
+    (
+        "a revoked delegate still counted as authorised",
+        "            if int(d.author_id) == target and d.who == who and bool(d.active):",
+        "            if int(d.author_id) == target and d.who == who:",
+    ),
+    (
+        "delegation not scoped to the record it was granted on",
+        "            if int(d.author_id) == target and d.who == who and bool(d.active):",
+        "            if d.who == who and bool(d.active):",
+    ),
+    (
+        "a delegate allowed to appoint further delegates",
+        "        if gl.message.sender_address != a.registrar:\n"
+        "            raise gl.vm.UserError(\"only the registrar may authorise a delegate\")",
+        "        if not self._may_state(author_id, a, gl.message.sender_address):\n"
+        "            raise gl.vm.UserError(\"only the registrar may authorise a delegate\")",
+    ),
+    (
+        "a delegate allowed to revoke",
+        "        if gl.message.sender_address != a.registrar:\n"
+        "            raise gl.vm.UserError(\"only the registrar may revoke a delegate\")",
+        "        if not self._may_state(author_id, a, gl.message.sender_address):\n"
+        "            raise gl.vm.UserError(\"only the registrar may revoke a delegate\")",
+    ),
+    (
+        "may_state() drifting from the rule state() enforces",
+        "        a = self._author(author_id)\n"
+        "        return self._may_state(author_id, a, Address(str(who).strip()))",
+        "        self._author(author_id)\n"
+        "        return True",
+    ),
+    (
+        "the cap not re-checked when a revoked delegate is reactivated",
+        "            if live >= MAX_DELEGATES:\n"
+        "                raise gl.vm.UserError(\n"
+        "                    f\"a record is capped at {MAX_DELEGATES} active delegates\"\n"
+        "                )\n"
+        "            row.active = True",
+        "            row.active = True",
+    ),
+    (
+        "the cap counted in the same pass that finds the row",
+        "            if d.who == addr:\n"
+        "                found = i\n",
+        "            if d.who == addr:\n"
+        "                found = i\n"
+        "                break\n",
+    ),
+    (
+        "the delegate cap removed",
+        "        if live >= MAX_DELEGATES:",
+        "        if False:",
+    ),
+    (
+        "a malformed delegate address passed to Address()",
+        "        if not looks_like_address(who):\n"
+        "            raise gl.vm.UserError(\"that is not a 20 byte hex address\")\n"
+        "        addr = Address(str(who).strip())\n"
+        "        if addr == a.registrar:",
+        "        addr = Address(str(who).strip())\n"
+        "        if addr == a.registrar:",
+    ),
     # NOT listed: "the post-consensus range check dropped". By the time the
     # deterministic half runs, leader_fn has already clamped an out-of-range
     # answer to empty AND the validator's layer 1 has rejected one that arrived
@@ -157,8 +235,8 @@ MUTATIONS = [
     ),
     (
         "an int storage field",
-        "    author_id: u256\n    text: str",
-        "    author_id: int\n    text: str",
+        "    author_id: u256\n    by: Address",
+        "    author_id: int\n    by: Address",
     ),
     (
         "a storage field declared twice",

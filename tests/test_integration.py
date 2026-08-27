@@ -23,7 +23,7 @@ gltest = pytest.importorskip(
     reason="integration tests need genlayer-test and a running Studio: "
            "pip install genlayer-test, then gltest --network studionet",
 )
-from gltest import get_contract_factory                      # noqa: E402
+from gltest import get_contract_factory, get_accounts        # noqa: E402
 from gltest.assertions import tx_execution_succeeded         # noqa: E402
 
 
@@ -87,3 +87,88 @@ class TestRecant:
         contract.state(args=[0, S0])
         with pytest.raises(Exception):
             contract.verdict(args=[-1])
+
+
+class TestAuthority:
+    """The authorisation rules, against a real runtime.
+
+    These matter more than the rest of this file. tests/glsim.py models
+    gl.message.sender_address with a variable a test can set; a node derives it
+    from a signature. A rule that holds in the simulator and not on chain would
+    be invisible to every other test here.
+    """
+
+    @pytest.fixture
+    def two(self):
+        accounts = get_accounts()
+        if len(accounts) < 2:
+            pytest.skip(
+                "needs two configured accounts on this network, so that a "
+                "refusal is a refusal and not an unfunded sender"
+            )
+        return accounts[0], accounts[1]
+
+    @pytest.fixture
+    def contract(self, two):
+        owner, _ = two
+        factory = get_contract_factory(contract_file_path="recant.py")
+        return factory.deploy(args=[], account=owner)
+
+    def test_a_stranger_cannot_add_to_someone_elses_record(self, contract, two):
+        _, stranger = two
+        contract.register(args=["Acme"])
+        with pytest.raises(Exception):
+            contract.connect(stranger).state(args=[0, S0])
+        assert contract.record(args=[0])["statements"] == []
+
+    def test_a_delegate_may_speak_and_the_record_names_them(self, contract, two):
+        _, agent = two
+        contract.register(args=["Acme"])
+        assert tx_execution_succeeded(contract.authorise(args=[0, agent.address]))
+        assert tx_execution_succeeded(contract.connect(agent).state(args=[0, S0]))
+        row = contract.record(args=[0])["statements"][0]
+        assert row["by"].lower() == agent.address.lower()
+        assert contract.registrar(args=[0]).lower() != agent.address.lower()
+
+    def test_a_revoked_delegate_cannot_speak(self, contract, two):
+        _, agent = two
+        contract.register(args=["Acme"])
+        contract.authorise(args=[0, agent.address])
+        contract.connect(agent).state(args=[0, S0])
+        assert tx_execution_succeeded(contract.revoke(args=[0, agent.address]))
+        with pytest.raises(Exception):
+            contract.connect(agent).state(args=[0, S1])
+        # revoking ends the authority and keeps what was already said
+        assert len(contract.record(args=[0])["statements"]) == 1
+
+    def test_a_delegate_may_not_withdraw_or_delegate(self, contract, two):
+        _, agent = two
+        contract.register(args=["Acme"])
+        contract.authorise(args=[0, agent.address])
+        contract.state(args=[0, S0])
+        with pytest.raises(Exception):
+            contract.connect(agent).withdraw(args=[0])
+        with pytest.raises(Exception):
+            contract.connect(agent).authorise(args=[0, agent.address])
+        with pytest.raises(Exception):
+            contract.connect(agent).revoke(args=[0, agent.address])
+
+    def test_may_state_answers_what_state_enforces(self, contract, two):
+        owner, agent = two
+        contract.register(args=["Acme"])
+        assert contract.may_state(args=[0, owner.address]) is True
+        assert contract.may_state(args=[0, agent.address]) is False
+        contract.authorise(args=[0, agent.address])
+        assert contract.may_state(args=[0, agent.address]) is True
+
+    def test_an_address_is_matched_by_value_not_by_spelling(self, contract, two):
+        """An Address is 20 raw bytes on chain, so case carries no meaning."""
+        _, agent = two
+        contract.register(args=["Acme"])
+        contract.authorise(args=[0, agent.address.lower()])
+        assert contract.may_state(args=[0, agent.address.upper().replace("0X", "0x")]) is True
+
+    def test_a_malformed_delegate_address_is_refused(self, contract):
+        contract.register(args=["Acme"])
+        with pytest.raises(Exception):
+            contract.authorise(args=[0, "not-an-address"])

@@ -36,8 +36,14 @@ ADDR=$(genlayer deploy --contract contracts/recant.py \
        | grep -oE '0x[0-9a-fA-F]{40}' | head -1)
 gold "deployed at $ADDR"
 
-dim "register()  open a record"
+dim "register()  open a record. THIS caller becomes its registrar"
 genlayer write "$ADDR" register --args "Example Org" >/dev/null
+
+# Everything below is signed by the same account, which is the registrar. A
+# different account calling state() here is refused, which is the point: the
+# record has to be the author's own or the verdict computed from it means
+# nothing. Delegation exists for the case where it genuinely is not the same
+# key -- authorise(0, "0x...") then state() from that address.
 
 dim "state()     three statements, the third fights the first"
 genlayer write "$ADDR" state --args 0 "We will never sell or share user data with any third party." >/dev/null
@@ -80,6 +86,12 @@ calls with a Consensus Result beside them.
 
 Both paths should be on chain: statement 2 resolved contradicts, statement 3
 came back stale.
+
+  registrar(0)   the address that owns the record
+  may_state(0, "0x...")   whether some other address could write to it
+
+Neither costs a transaction. Both are worth reading once, because they are what
+a consuming contract binds to instead of the label.
 
 Then paste the address into README.md and SUBMISSION.md where {address} appears.
 

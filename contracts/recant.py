@@ -71,6 +71,34 @@ THE RECORD GROWS
     fiftieth statement is checked against forty-nine. A contract deployed once
     and used for a year is worth more than the day it shipped, and the value
     lives in state rather than in code.
+
+WHO MAY WRITE TO A RECORD
+    A verdict about an author is worth exactly as much as the record it was
+    computed from, so the record has to be the author's own. Every write is
+    bound to an address:
+
+        register(label)         anyone. The caller becomes the registrar, and
+                                the registrar IS the identity. The label is a
+                                display string and proves nothing.
+        state(id, text)         the registrar, or an address the registrar has
+                                authorised. Nobody else can put words on
+                                somebody else's record.
+        authorise / revoke      the registrar alone.
+        withdraw(id)            the registrar alone. A delegate may speak on
+                                the record; only the registrar may retract from
+                                it, because withdrawing rewrites what later
+                                checks mean.
+        check(id)               anyone, deliberately. consistency() is a claim
+                                about an author, and an author who could decide
+                                which of their own statements got audited would
+                                only ever audit the flattering ones. Checking
+                                adds no text and can reach only one outcome:
+                                the verdict the record already implies.
+
+    Every statement also stores the address that submitted it, readable through
+    latest() and record(). Delegation is visible rather than implied: a reader
+    can always see which key put a given sentence on the record, and whether
+    that key was the registrar's.
 """
 
 from genlayer import *
@@ -93,6 +121,24 @@ VERDICTS = (CLEAR, CONTRADICTS, CONFLICT, STALE)
 MAX_STATEMENT = 600
 MAX_SCOPE = 24                 # how many earlier statements enter one prompt
 MAX_REASON = 140
+MAX_DELEGATES = 16             # per author, so the authority scan stays bounded
+
+
+def looks_like_address(raw):
+    """Is this a 20 byte hex address, before anything tries to parse it?
+
+    Address() raises a bare Exception on a malformed value, which the runtime
+    reports as a contract error rather than as the caller's mistake. Checking
+    the shape first turns "the contract crashed" into "that is not an address",
+    which is the difference between a bug report and a typo.
+    """
+    s = str(raw).strip()
+    if len(s) != 42 or not s.startswith("0x"):
+        return False
+    for ch in s[2:]:
+        if ch not in "0123456789abcdefABCDEF":
+            return False
+    return True
 
 
 def sanitise_reason(raw, limit=MAX_REASON):
@@ -269,6 +315,7 @@ class Author:
 @dataclass
 class Statement:
     author_id: u256
+    by: Address         # the account that submitted it, not merely who owns it
     text: str
     at: str
     withdrawn: bool
@@ -278,9 +325,26 @@ class Statement:
     why: str            # leader supplied, sanitised, NOT consensus
 
 
+@allow_storage
+@dataclass
+class Delegate:
+    """One address the registrar of one record has authorised to speak on it.
+
+    Flat, with the author id on the row, for the same reason Statement is: a
+    storage dataclass cannot hold a collection, so an author cannot carry a
+    list of its own delegates. Revoking clears the flag rather than removing
+    the row, so that a revoked delegation stays visible — the same reasoning
+    that makes withdraw() mark rather than delete.
+    """
+    author_id: u256
+    who: Address
+    active: bool
+
+
 class Contract(gl.Contract):
     authors: DynArray[Author]
     statements: DynArray[Statement]
+    delegates: DynArray[Delegate]
 
     def __init__(self):
         pass
@@ -306,6 +370,31 @@ class Contract(gl.Contract):
         if i < 0 or i >= len(self.statements):
             raise gl.vm.UserError("no such statement")
         return self.statements[i]
+
+    def _delegated(self, author_id: u256, who) -> bool:
+        """Is `who` an ACTIVE delegate of this record?
+
+        A linear scan, bounded by MAX_DELEGATES per author. Revoked rows are
+        still present and must not count, so the active flag is checked here
+        and not assumed from the row existing.
+        """
+        target = int(author_id)
+        for i in range(len(self.delegates)):
+            d = self.delegates[i]
+            if int(d.author_id) == target and d.who == who and bool(d.active):
+                return True
+        return False
+
+    def _may_state(self, author_id: u256, author, who) -> bool:
+        """Who is allowed to put words on this record.
+
+        The registrar, or an address the registrar authorised. Nobody else,
+        ever: a statement attributed to an author who did not make it would
+        corrupt every later check against that record and the consistency
+        figure computed from it, and it would do so silently, because a planted
+        statement reads exactly like a real one.
+        """
+        return who == author.registrar or self._delegated(author_id, who)
 
     def _scope(self, author_id: u256, before_id: u256):
         """Earlier statements by one author, oldest first, as plain data.
@@ -362,8 +451,19 @@ class Contract(gl.Contract):
         got around to checking it, and a contract that refused to record what
         it could not immediately judge would have gaps exactly where the
         interesting statements are.
+
+        The caller must be the registrar or an authorised delegate. This is the
+        load-bearing check in the whole contract: everything downstream — the
+        scope a later statement is checked against, the verdict, the
+        consistency figure published about this author — is computed from the
+        rows this method writes, so an unauthenticated write here is a forged
+        premise for every conclusion that follows.
         """
         a = self._author(author_id)
+        if not self._may_state(author_id, a, gl.message.sender_address):
+            raise gl.vm.UserError(
+                "only the registrar or an authorised delegate may add to this record"
+            )
         t = text.strip()
         if len(t) < 12:
             raise gl.vm.UserError("a statement needs to be a sentence, not a fragment")
@@ -374,6 +474,7 @@ class Contract(gl.Contract):
         self.statements.append(
             Statement(
                 author_id=u256(int(author_id)),
+                by=gl.message.sender_address,
                 text=t,
                 at=gl.message_raw["datetime"],
                 withdrawn=False,
@@ -384,6 +485,88 @@ class Contract(gl.Contract):
             )
         )
         a.n_statements = a.n_statements + u256(1)
+
+    @gl.public.write
+    def authorise(self, author_id: u256, who: str) -> None:
+        """Let another address speak on this record. Registrar only.
+
+        Taken as a hex string rather than as an Address so that a malformed
+        value is refused as the caller's mistake instead of raising inside the
+        type constructor, where it surfaces as a contract error.
+        """
+        a = self._author(author_id)
+        if gl.message.sender_address != a.registrar:
+            raise gl.vm.UserError("only the registrar may authorise a delegate")
+        if not looks_like_address(who):
+            raise gl.vm.UserError("that is not a 20 byte hex address")
+        addr = Address(str(who).strip())
+        if addr == a.registrar:
+            raise gl.vm.UserError("the registrar already speaks on this record")
+
+        # Count the whole record BEFORE deciding anything. Counting and
+        # matching in one pass looks equivalent and is not: the match can be
+        # found before the count has finished, and reactivating a revoked row
+        # on a partial count walks straight past the cap. Sixteen active, one
+        # revoked, authorise a new address, then re-authorise the revoked one,
+        # and the record holds seventeen.
+        target = int(author_id)
+        live = 0
+        found = -1
+        for i in range(len(self.delegates)):
+            d = self.delegates[i]
+            if int(d.author_id) != target:
+                continue
+            if bool(d.active):
+                live = live + 1
+            if d.who == addr:
+                found = i
+
+        if found >= 0:
+            # Reusing the row keeps the history one row per address rather than
+            # growing a new one on every authorise/revoke cycle.
+            row = self.delegates[found]
+            if bool(row.active):
+                raise gl.vm.UserError("already authorised")
+            if live >= MAX_DELEGATES:
+                raise gl.vm.UserError(
+                    f"a record is capped at {MAX_DELEGATES} active delegates"
+                )
+            row.active = True
+            return
+
+        if live >= MAX_DELEGATES:
+            raise gl.vm.UserError(
+                f"a record is capped at {MAX_DELEGATES} active delegates"
+            )
+        self.delegates.append(
+            Delegate(author_id=u256(target), who=addr, active=True)
+        )
+
+    @gl.public.write
+    def revoke(self, author_id: u256, who: str) -> None:
+        """Withdraw a delegation. Registrar only.
+
+        Statements the delegate already made stay on the record, and keep
+        naming the address that made them. Revoking removes the authority to
+        speak from now on; it does not rewrite what was said, for the same
+        reason withdraw() marks rather than deletes.
+        """
+        a = self._author(author_id)
+        if gl.message.sender_address != a.registrar:
+            raise gl.vm.UserError("only the registrar may revoke a delegate")
+        if not looks_like_address(who):
+            raise gl.vm.UserError("that is not a 20 byte hex address")
+        addr = Address(str(who).strip())
+
+        target = int(author_id)
+        for i in range(len(self.delegates)):
+            d = self.delegates[i]
+            if int(d.author_id) == target and d.who == addr:
+                if not bool(d.active):
+                    raise gl.vm.UserError("already revoked")
+                d.active = False
+                return
+        raise gl.vm.UserError("that address is not a delegate of this record")
 
     @gl.public.write
     def withdraw(self, statement_id: u256) -> None:
@@ -531,11 +714,52 @@ class Contract(gl.Contract):
         return str(self._statement(statement_id).against)
 
     @gl.public.view
+    def registrar(self, author_id: u256) -> str:
+        """The address that owns this record.
+
+        The identity of an author IS this address. `label` is a display string
+        that anybody could have typed, so a consumer deciding whether a record
+        belongs to somebody must compare this and not the label.
+        """
+        return str(self._author(author_id).registrar)
+
+    @gl.public.view
+    def may_state(self, author_id: u256, who: str) -> bool:
+        """Could this address add a statement to this record right now?
+
+        Exposed so a consuming contract can check authority without replaying
+        the delegation rules, and so the answer it gets is the same one state()
+        would enforce.
+        """
+        if not looks_like_address(who):
+            return False
+        a = self._author(author_id)
+        return self._may_state(author_id, a, Address(str(who).strip()))
+
+    @gl.public.view
+    def delegation(self, author_id: u256) -> dict:
+        """Every address ever authorised on this record, revoked ones included."""
+        self._author(author_id)
+        target = int(author_id)
+        rows = []
+        for i in range(len(self.delegates)):
+            d = self.delegates[i]
+            if int(d.author_id) != target:
+                continue
+            rows.append({"who": str(d.who), "active": bool(d.active)})
+        return {
+            "registrar": str(self._author(author_id).registrar),
+            "delegates": rows,
+        }
+
+    @gl.public.view
     def latest(self, statement_id: u256) -> dict:
         s = self._statement(statement_id)
         a = self._author(s.author_id)
         return {
             "author": str(a.label),
+            "registrar": str(a.registrar),
+            "by": str(s.by),
             "text": str(s.text),
             "at": str(s.at),
             "withdrawn": bool(s.withdrawn),
@@ -561,11 +785,16 @@ class Contract(gl.Contract):
             rows.append({
                 "id": i,
                 "text": str(s.text),
+                "by": str(s.by),
                 "withdrawn": bool(s.withdrawn),
                 "verdict": str(s.verdict),
                 "against": str(s.against),
             })
-        return {"author": str(a.label), "statements": rows}
+        return {
+            "author": str(a.label),
+            "registrar": str(a.registrar),
+            "statements": rows,
+        }
 
     @gl.public.view
     def consistency(self, author_id: u256) -> dict:

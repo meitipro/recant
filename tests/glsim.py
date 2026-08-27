@@ -66,6 +66,30 @@ class TreeMap(dict):
 
 
 class Address(str):
+    """A str, but compared the way the real Address compares.
+
+    The runtime's Address holds 20 raw bytes and compares those, so "0xAB..."
+    and "0xab..." are the SAME address on chain. A plain str subclass compares
+    case-sensitively, which would let an authorisation test pass here while a
+    node accepted a differently-cased address, or the reverse. Normalising on
+    construction gives this the same equality the runtime has.
+    """
+
+    def __new__(cls, val):
+        s = str(val).strip()
+        # The runtime parses 20 bytes and raises on anything else. Accepting a
+        # malformed value here would let a contract that forgot to validate one
+        # pass its tests and then fail on a node.
+        ok = len(s) == 42 and s[:2] in ("0x", "0X")
+        if ok:
+            for ch in s[2:]:
+                if ch not in "0123456789abcdefABCDEF":
+                    ok = False
+                    break
+        if not ok:
+            raise Exception("invalid address " + repr(s))
+        return str.__new__(cls, "0x" + s[2:].lower())
+
     @staticmethod
     def zero():
         return Address("0x" + "0" * 40)

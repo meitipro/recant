@@ -162,6 +162,68 @@ test that cannot fail is worse than no test -- it reports coverage it does not
 provide.
 
 
+### state() shipped with no authority check at all
+
+Found in review after the first deployment, and it is the most serious thing
+this project got wrong. `withdraw()` compared `gl.message.sender_address`
+against `Author.registrar`; `state()` compared nothing. Any account could add a
+statement to any record, and the injected sentence was then indistinguishable
+from a real one: it entered the scope of every later check, it could be the
+statement a genuine later statement was found to contradict, and once checked it
+moved the `consistency()` figure published about an author who never wrote it.
+
+The whole contract computes a claim about an author from a record, so an
+unauthenticated write to that record forges the premise of every conclusion
+downstream. A contradiction detector whose corpus anyone can edit measures
+nothing.
+
+Two things made it survive to review. The suite had a
+`test_only_the_registrar_may_withdraw` and no counterpart for `state`, so the
+one method that was gated was the one that was tested. And every existing test
+called `state()` as the default sender, which is the registrar, so no test ever
+exercised the path where they differ. **111 tests passed against the broken
+contract and 111 passed against the fixed one**; the fix changed no behaviour
+any of them looked at.
+
+What is in place now:
+
+- `state()` requires the registrar or an address the registrar authorised.
+- `authorise()` / `revoke()` are registrar-only, so a delegate cannot appoint or
+  remove anybody. A delegate may speak on a record and may not retract from it,
+  because withdrawing rewrites what later checks mean.
+- `Statement.by` stores the submitting account on every row, and `latest()` and
+  `record()` publish it. Delegation is visible rather than implied.
+- `registrar()` and `may_state()` let a consuming contract bind to the address
+  rather than to the label, and get the same answer `state()` enforces.
+- A static test asserts that every `@gl.public.write` other than `register` and
+  `check` references the sender. It covers the methods nobody has written yet: a
+  new write added later without a gate fails, and the only way to pass is to gate
+  it or to add it to the exemption list in a diff, on purpose.
+
+`check()` stays open to anybody, which is a decision rather than an oversight.
+`consistency()` is a claim about an author, and an author who could choose which
+of their own statements got audited would only ever audit the flattering ones.
+Checking adds no text and can reach only the verdict the record already implies.
+
+Two more holes turned up while closing this one, both from mutations rather than
+from reading:
+
+**A delegate could revoke.** The suite covered a delegate trying to `authorise`
+and a stranger trying to `revoke`, but never a delegate trying to `revoke`. The
+mutation that granted it escaped every test. It is worse than it looks: a
+delegate who can revoke can remove every other delegate and become the only
+voice on a record it does not own.
+
+**The simulator compared addresses as strings.** `tests/glsim.py` modelled
+`Address` as a plain `str` subclass, so `0xAB…` and `0xab…` were different
+addresses there and the same address on a node, where an Address is 20 raw
+bytes. An authorisation test could have passed in the simulator against a
+contract a node would refuse, or the reverse. glsim now normalises on
+construction and rejects a malformed address the way the runtime does, so a
+contract that forgets to validate one fails locally instead of on chain.
+
+---
+
 ### The deploy script did not run
 
 Three things in `scripts/deploy.sh`, none of them in the contract, each of which

@@ -6,7 +6,7 @@ A reusable primitive that checks a new statement against every earlier statement
 
 - **Contract:** [`contracts/recant.py`](contracts/recant.py)
 - **Tests:** `pip install pytest && pytest tests/ -q` — nothing else to install
-- **Deployed:** `0x2b4367c45ec6CD309BdEEE5eC7bFd2f20A63A3F7` on studionet ([explorer](https://explorer-studio.genlayer.com/address/0x2b4367c45ec6CD309BdEEE5eC7bFd2f20A63A3F7))
+- **Deployed:** `{address}` on studionet ([explorer](https://explorer-studio.genlayer.com/address/{address}))
 - **Specification:** [CONTRACTS.md](CONTRACTS.md)
 - **Decisions and limits:** [DECISIONS.md](DECISIONS.md)
 - **License:** MIT. Copy the agreement rule; that is what it is for.
@@ -86,29 +86,6 @@ their mind, in public, on the record. Withdrawing does not delete, because a
 statement that was made and then taken back is a different fact from a statement
 never made.
 
-### All four, on chain
-
-The deployed record at
-[`0x2b4367c45ec6CD309BdEEE5eC7bFd2f20A63A3F7`](https://explorer-studio.genlayer.com/address/0x2b4367c45ec6CD309BdEEE5eC7bFd2f20A63A3F7)
-carries one author and four statements, checked in order:
-
-| Statement | Verdict | Against |
-|---|---|---|
-| "We will never sell or share user data with any third party." | `clear` | — |
-| "Our uptime target for the coming year is ninety nine percent." | `clear` | — |
-| "We share user data with selected commercial partners." | `contradicts` | `0` |
-| "We share user data with commercial partners under contract." | `stale` | `0` |
-
-Rows three and four say the same thing. Between them the author withdrew the
-first statement, so the same claim comes back `stale` instead of `contradicts`
-— from a withdrawal flag the block never sees. Read it back yourself with
-`consistency(0)`, which returns `inconsistent_pct: 25`.
-
-On `check(3)` two of five validators voted **disagree** with no error anywhere:
-they ran the prompt, reached a different set of indices, and layer 2 declined to
-call that agreement. The transaction finalized on the majority. That is the
-refusal path on a live network, not in a simulator.
-
 ## Why this is not a thin LLM wrapper
 
 The model never decides an outcome. **It points at a row in a list the contract
@@ -131,22 +108,64 @@ state rather than in code.
 ## The API
 
 ```python
-register(label)                  # open a record for one author
-state(author_id, text)           # add a statement. recording != judging
-withdraw(statement_id)           # take one back. does not delete
-check(statement_id)              # judge it against the earlier record
+register(label)                  # open a record. the caller becomes registrar
+state(author_id, text)           # add a statement. registrar or delegate only
+authorise(author_id, who)        # let another address speak. registrar only
+revoke(author_id, who)           # take that back. registrar only
+withdraw(statement_id)           # retract a statement. registrar only
+check(statement_id)              # judge it against the earlier record. open
 
 verdict(statement_id)   -> str   # clear | contradicts | conflict | stale | ""
 against(statement_id)   -> str   # the statement ids it fights, pipe joined
-latest(statement_id)    -> dict  # the verdict, the target, the reason
+latest(statement_id)    -> dict  # the verdict, the target, the reason, the author
 record(author_id)       -> dict  # the whole record, oldest first
 consistency(author_id)  -> dict  # how often this author contradicts themselves
+registrar(author_id)    -> str   # the address that owns the record
+may_state(author_id, w) -> bool  # could that address write to it right now
+delegation(author_id)   -> dict  # every address authorised, revoked ones too
 ```
 
 Recording and judging are two transactions **on purpose**. A statement belongs
 on the record the moment it is made, whether or not anybody has got around to
 checking it. A contract that refused to record what it could not immediately
 judge would have gaps exactly where the interesting statements are.
+
+## Who may write to a record
+
+A verdict about an author is worth exactly as much as the record it was computed
+from, so **the record has to be the author's own**. Every write is bound to an
+address, and the registrar is the identity: `label` is a display string that
+anybody could have typed.
+
+| Call | Who |
+|---|---|
+| `register` | anyone. The caller becomes the registrar of the new record |
+| `state` | the registrar, or an address the registrar has authorised |
+| `authorise` / `revoke` | the registrar alone |
+| `withdraw` | the registrar alone |
+| `check` | anyone, deliberately |
+
+`state()` is the load-bearing one. Everything downstream — the scope a later
+statement is checked against, its verdict, the consistency figure published
+about the author — is computed from the rows `state()` writes, so an
+unauthenticated write there is a forged premise for every conclusion that
+follows, and a planted sentence reads exactly like a real one.
+
+**A delegate may speak on a record but not retract from it.** Withdrawing
+changes what every later check means, turning `contradicts` into `stale`, so it
+stays with the registrar. Every statement also stores the address that submitted
+it, readable through `latest()` and `record()`: delegation is visible rather
+than implied, and a reader can always see which key put a given sentence there.
+
+`check()` is open on purpose. `consistency()` is a claim about an author, and an
+author who could choose which of their own statements got audited would only
+ever audit the flattering ones. Checking adds no text and can reach only the
+verdict the record already implies.
+
+```python
+if Recant(ADDR).view().registrar(author_id) != expected_owner:
+    raise ...          # bind to the address, never to the label
+```
 
 ## Using it from another contract
 
@@ -174,7 +193,7 @@ pytest tests/ -q
 ```
 
 <!-- measured:tests -->
-`pytest tests/ -q` reports **111 passed, 1 skipped**, and every one of the **26** mutations below is caught.
+`pytest tests/ -q` reports **137 passed, 1 skipped**, and every one of the **37** mutations below is caught.
 <!-- /measured:tests -->
 
 **`tests/test_logic.py`** — the pure rules, exhaustively. They are module-level
@@ -229,6 +248,17 @@ a scratch copy of the repository and records which test caught it.
 | anyone allowed to withdraw | `test_only_the_registrar_may_withdraw` |
 | re-checking allowed, so a verdict can be overwritten | `test_checking_twice_is_refused` |
 | withdrawing twice allowed | `test_withdrawing_twice_is_refused` |
+| state left unauthenticated, so anyone may write to any record | `test_a_stranger_cannot_add_to_someone_elses_record` |
+| the submitting address not recorded on the statement | `test_a_delegate_may_speak_and_the_record_names_them` |
+| a revoked delegate still counted as authorised | `test_a_revoked_delegate_cannot_speak` |
+| delegation not scoped to the record it was granted on | `test_delegation_is_scoped_to_one_record` |
+| a delegate allowed to appoint further delegates | `test_a_delegate_may_not_authorise_another_delegate` |
+| a delegate allowed to revoke | `test_a_delegate_may_not_revoke_anybody` |
+| may_state() drifting from the rule state() enforces | `test_may_state_answers_what_state_enforces` |
+| the cap not re-checked when a revoked delegate is reactivated | `test_the_cap_survives_a_revoke_and_reauthorise_cycle` |
+| the cap counted in the same pass that finds the row | `test_the_cap_survives_a_revoke_and_reauthorise_cycle` |
+| the delegate cap removed | `test_the_cap_survives_a_revoke_and_reauthorise_cycle` |
+| a malformed delegate address passed to Address() | `test_a_malformed_delegate_address_is_refused_cleanly` |
 | a nested mapping returned from the block | `test_a_consistent_statement_is_clear` |
 | a bool returned from the block | `test_a_consistent_statement_is_clear` |
 | a collection nested back into a storage dataclass | `test_the_first_statement_is_clear_without_a_model` |

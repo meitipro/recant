@@ -167,6 +167,258 @@ class TestRecant:
         with pytest.raises(S.UserError, match="already withdrawn"):
             S.call(c, "withdraw", 0)
 
+    # -- authority ----------------------------------------------------------
+    #
+    # A verdict about an author is only worth the record it was computed from,
+    # so the record has to be the author's own. Every test below is about who
+    # may put words on somebody else's record, and the answer is nobody.
+
+    STRANGER = "0x" + "99" * 20
+    AGENT = "0x" + "77" * 20
+    REGISTRAR = "0x" + "11" * 20
+
+    def test_a_stranger_cannot_add_to_someone_elses_record(self):
+        """The hole this section exists for. An unauthenticated state() lets
+        any account inject text into any record, which forges the premise of
+        every later check against it and of the consistency figure published
+        from it. The injected sentence reads exactly like a real one."""
+        c = self.deploy()
+        S.set_sender(self.STRANGER)
+        try:
+            with pytest.raises(S.UserError, match="registrar or an authorised delegate"):
+                S.call(c, "state", 0, S2)
+        finally:
+            S.set_sender(self.REGISTRAR)
+        assert c.statement_count() == 0
+
+    def test_holding_a_record_grants_nothing_over_another_one(self):
+        """The obvious way round a naive 'is the caller known here' check."""
+        c = self.deploy("Acme")
+        S.set_sender(self.STRANGER)
+        try:
+            S.call(c, "register", "Impostor Ltd")
+            with pytest.raises(S.UserError, match="registrar or an authorised delegate"):
+                S.call(c, "state", 0, S2)
+            S.call(c, "state", 1, S2)
+        finally:
+            S.set_sender(self.REGISTRAR)
+        assert c.record(0)["statements"] == []
+        assert len(c.record(1)["statements"]) == 1
+
+    def test_a_delegate_may_speak_and_the_record_names_them(self):
+        c = self.deploy()
+        S.call(c, "authorise", 0, self.AGENT)
+        S.set_sender(self.AGENT)
+        try:
+            S.call(c, "state", 0, S0)
+        finally:
+            S.set_sender(self.REGISTRAR)
+        row = c.record(0)["statements"][0]
+        assert row["by"].lower() == self.AGENT
+        assert c.latest(0)["registrar"].lower() == self.REGISTRAR
+
+    def test_a_revoked_delegate_cannot_speak(self):
+        c = self.deploy()
+        S.call(c, "authorise", 0, self.AGENT)
+        S.call(c, "revoke", 0, self.AGENT)
+        S.set_sender(self.AGENT)
+        try:
+            with pytest.raises(S.UserError, match="registrar or an authorised delegate"):
+                S.call(c, "state", 0, S0)
+        finally:
+            S.set_sender(self.REGISTRAR)
+
+    def test_revoking_does_not_erase_what_was_already_said(self):
+        """Same reasoning as withdraw(): the authority to speak ends, the
+        record of having spoken does not."""
+        c = self.deploy()
+        S.call(c, "authorise", 0, self.AGENT)
+        S.set_sender(self.AGENT)
+        try:
+            S.call(c, "state", 0, S0)
+        finally:
+            S.set_sender(self.REGISTRAR)
+        S.call(c, "revoke", 0, self.AGENT)
+        row = c.record(0)["statements"][0]
+        assert row["text"] == S0
+        assert row["by"].lower() == self.AGENT
+
+    def test_only_the_registrar_may_authorise_or_revoke(self):
+        c = self.deploy()
+        S.call(c, "authorise", 0, self.AGENT)
+        S.set_sender(self.STRANGER)
+        try:
+            with pytest.raises(S.UserError, match="registrar"):
+                S.call(c, "authorise", 0, self.STRANGER)
+            with pytest.raises(S.UserError, match="registrar"):
+                S.call(c, "revoke", 0, self.AGENT)
+        finally:
+            S.set_sender(self.REGISTRAR)
+
+    def test_a_delegate_may_not_authorise_another_delegate(self):
+        """Otherwise one delegation is enough to take the whole record over."""
+        c = self.deploy()
+        S.call(c, "authorise", 0, self.AGENT)
+        S.set_sender(self.AGENT)
+        try:
+            with pytest.raises(S.UserError, match="registrar"):
+                S.call(c, "authorise", 0, self.STRANGER)
+        finally:
+            S.set_sender(self.REGISTRAR)
+
+    def test_a_delegate_may_not_revoke_anybody(self):
+        """Found by a mutation that escaped: authorise() was covered against a
+        delegate and revoke() was not, so a delegate able to revoke would have
+        failed nothing. It matters more than it looks, because a delegate who
+        can revoke can remove every OTHER delegate and become the only voice
+        on a record it does not own."""
+        c = self.deploy()
+        other = "0x" + "55" * 20
+        S.call(c, "authorise", 0, self.AGENT)
+        S.call(c, "authorise", 0, other)
+        S.set_sender(self.AGENT)
+        try:
+            with pytest.raises(S.UserError, match="registrar"):
+                S.call(c, "revoke", 0, other)
+            with pytest.raises(S.UserError, match="registrar"):
+                S.call(c, "revoke", 0, self.AGENT)
+        finally:
+            S.set_sender(self.REGISTRAR)
+        assert [d["active"] for d in c.delegation(0)["delegates"]] == [True, True]
+
+    def test_a_delegate_may_not_withdraw(self):
+        """A delegate speaks on the record, only the registrar retracts from
+        it, because withdrawing changes what every later check means."""
+        c = self.deploy()
+        S.call(c, "authorise", 0, self.AGENT)
+        S.call(c, "state", 0, S0)
+        S.set_sender(self.AGENT)
+        try:
+            with pytest.raises(S.UserError, match="registrar"):
+                S.call(c, "withdraw", 0)
+        finally:
+            S.set_sender(self.REGISTRAR)
+
+    def test_an_address_is_matched_by_value_not_by_spelling(self):
+        """On chain an Address is 20 raw bytes and case carries no meaning, so
+        authorising a checksummed address and calling from the lower case one
+        is the same account and must be allowed."""
+        c = self.deploy()
+        S.call(c, "authorise", 0, "0x" + "AB" * 20)
+        S.set_sender("0x" + "ab" * 20)
+        try:
+            S.call(c, "state", 0, S0)
+        finally:
+            S.set_sender(self.REGISTRAR)
+        assert c.statement_count() == 1
+
+    def test_may_state_answers_what_state_enforces(self):
+        """A view that disagrees with the gate is worse than no view at all: a
+        consuming contract would gate on one rule and get the other."""
+        c = self.deploy()
+        S.call(c, "authorise", 0, self.AGENT)
+        assert c.may_state(0, self.REGISTRAR) is True
+        assert c.may_state(0, self.AGENT) is True
+        assert c.may_state(0, self.STRANGER) is False
+        assert c.may_state(0, "not-an-address") is False
+        for who in (self.REGISTRAR, self.AGENT, self.STRANGER):
+            S.set_sender(who)
+            try:
+                if c.may_state(0, who):
+                    S.call(c, "state", 0, S0)
+                else:
+                    with pytest.raises(S.UserError):
+                        S.call(c, "state", 0, S0)
+            finally:
+                S.set_sender(self.REGISTRAR)
+
+    @pytest.mark.parametrize("bad", ["", "0x", "not-an-address", "0x" + "z" * 40,
+                                     "0x" + "11" * 19, "0x" + "11" * 21])
+    def test_a_malformed_delegate_address_is_refused_cleanly(self, bad):
+        """Address() raises a bare Exception, which the runtime reports as a
+        contract error rather than as the caller's mistake."""
+        c = self.deploy()
+        with pytest.raises(S.UserError, match="not a 20 byte hex address"):
+            S.call(c, "authorise", 0, bad)
+
+    def test_the_registrar_is_not_added_as_a_delegate(self):
+        c = self.deploy()
+        with pytest.raises(S.UserError, match="already speaks"):
+            S.call(c, "authorise", 0, self.REGISTRAR)
+
+    def test_re_authorising_reuses_the_row_instead_of_growing_one(self):
+        c = self.deploy()
+        for _ in range(3):
+            S.call(c, "authorise", 0, self.AGENT)
+            S.call(c, "revoke", 0, self.AGENT)
+        assert len(c.delegation(0)["delegates"]) == 1
+        with pytest.raises(S.UserError, match="already revoked"):
+            S.call(c, "revoke", 0, self.AGENT)
+        S.call(c, "authorise", 0, self.AGENT)
+        with pytest.raises(S.UserError, match="already authorised"):
+            S.call(c, "authorise", 0, self.AGENT)
+
+    def test_the_delegate_cap_counts_active_rows(self):
+        """An unbounded delegate list is an unbounded scan on every state()."""
+        c = self.deploy()
+        for i in range(16):
+            S.call(c, "authorise", 0, "0x" + ("%02x" % (i + 32)) * 20)
+        with pytest.raises(S.UserError, match="capped at 16"):
+            S.call(c, "authorise", 0, self.AGENT)
+        S.call(c, "revoke", 0, "0x" + "20" * 20)
+        S.call(c, "authorise", 0, self.AGENT)
+
+    def test_the_cap_survives_a_revoke_and_reauthorise_cycle(self):
+        """Counting and matching in one pass looks equivalent to counting first
+        and is not. The match can be found before the count is finished, so
+        reactivating a revoked row decides against a partial count and walks
+        past the cap: sixteen active, revoke one, add a new one, re-authorise
+        the revoked one, seventeen active."""
+        c = self.deploy()
+        addrs = ["0x" + ("%02x" % (i + 32)) * 20 for i in range(16)]
+        for a in addrs:
+            S.call(c, "authorise", 0, a)
+        S.call(c, "revoke", 0, addrs[0])
+        S.call(c, "authorise", 0, self.AGENT)
+        with pytest.raises(S.UserError, match="capped at 16"):
+            S.call(c, "authorise", 0, addrs[0])
+        active = [d for d in c.delegation(0)["delegates"] if d["active"]]
+        assert len(active) == 16
+
+    def test_revoking_an_address_that_was_never_a_delegate_is_refused(self):
+        c = self.deploy()
+        with pytest.raises(S.UserError, match="not a delegate"):
+            S.call(c, "revoke", 0, self.STRANGER)
+
+    def test_delegation_is_scoped_to_one_record(self):
+        c = self.deploy("Acme")
+        S.call(c, "register", "Beta Corp")
+        S.call(c, "authorise", 0, self.AGENT)
+        S.set_sender(self.AGENT)
+        try:
+            S.call(c, "state", 0, S0)
+            with pytest.raises(S.UserError, match="registrar or an authorised delegate"):
+                S.call(c, "state", 1, S0)
+        finally:
+            S.set_sender(self.REGISTRAR)
+
+    def test_anyone_may_check_and_that_is_deliberate(self):
+        """consistency() is a claim about an author. An author who could choose
+        which of their own statements got audited would only ever audit the
+        flattering ones, so checking stays open to anybody. It adds no text and
+        can reach only the verdict the record already implies."""
+        c = self.deploy()
+        S.call(c, "state", 0, S0)
+        S.call(c, "state", 0, S2)
+        self.mocks(says("0"))
+        S.set_sender(self.STRANGER)
+        try:
+            S.call(c, "check", 1)
+        finally:
+            S.set_sender(self.REGISTRAR)
+        assert c.verdict(1) == "contradicts"
+        assert c.record(0)["statements"][1]["by"].lower() == self.REGISTRAR
+
     # -- consensus ----------------------------------------------------------
 
     def test_nodes_naming_different_statements_do_not_agree(self):
@@ -481,6 +733,48 @@ class TestStorageShape:
                             and tg.value.id == "self"):
                         assert tg.attr in declared, (
                             f"{m.name} assigns self.{tg.attr}, undeclared, will not persist")
+
+    def test_every_write_that_touches_a_record_checks_the_sender(self):
+        """A behaviour test only covers the methods somebody thought to test.
+
+        This one covers the methods nobody has written yet: a new public write
+        added later without an authority check fails here, and the only way to
+        pass is to gate it or to add it to the list below on purpose, which is
+        a decision somebody has to make in a diff rather than by omission.
+
+          register  opens a record and becomes its registrar, so there is no
+                    earlier owner to check against
+          check     deliberately open. consistency() is a claim about an
+                    author, and an author who chose which of their own
+                    statements got audited would only audit flattering ones.
+                    It adds no text and can reach only the verdict the record
+                    already implies.
+        """
+        import ast, pathlib
+        UNGATED = {"register", "check"}
+        tree = ast.parse(pathlib.Path(CONTRACT_PATH).read_text(encoding="utf-8"))
+        cls = [x for x in tree.body if isinstance(x, ast.ClassDef)
+               and any("gl.Contract" in ast.unparse(b) for b in x.bases)][0]
+        gated = {m.name: m for m in cls.body if isinstance(m, ast.FunctionDef)
+                 and any("gl.public.write" in ast.unparse(d) for d in m.decorator_list)}
+        assert gated, "no public writes found, the walk is broken"
+        for name, m in gated.items():
+            if name in UNGATED:
+                continue
+            body = ast.unparse(m)
+            assert "sender_address" in body or "_may_state" in body, (
+                f"{name} is a public write with no authority check")
+
+    def test_the_authority_helper_reads_the_active_flag(self):
+        """A delegate row is kept after revocation so the history stays
+        visible, which means the row existing is NOT the authority. Reading
+        the flag is what separates a delegate from a former delegate."""
+        import ast, pathlib
+        tree = ast.parse(pathlib.Path(CONTRACT_PATH).read_text(encoding="utf-8"))
+        fn = [x for x in ast.walk(tree) if isinstance(x, ast.FunctionDef)
+              and x.name == "_delegated"][0]
+        src = ast.unparse(fn)
+        assert "active" in src and "author_id" in src
 
     def test_the_block_boundary_carries_flat_strings_only(self):
         """A nested mapping or a bool here fails inside the calldata encoder,
