@@ -16,9 +16,10 @@ The failure it catches is not a wrong answer. It is a *locally correct* answer
 that fights the record. Each statement, read alone, is unremarkable; the
 contradiction exists only in the pair.
 
-Validator consensus cannot see it. Every validator receives only the new
-statement, so the earlier record is not part of the input at all, and five nodes
-agree confidently on something the same contract already contradicted.
+Consensus alone does not reach it, because every validator receives only the new
+statement: the earlier record is not part of the input at all, so five nodes
+agree confidently on something the same contract already contradicted. The gap
+is in what the block is given, and supplying it is what this contract is for.
 
 ## Consensus
 

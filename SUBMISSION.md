@@ -99,10 +99,10 @@ deterministically and never opens a block.
 Recant: self-consistency across a record of statements
 ```
 
-## Notes (915 characters, the box caps at 1000)
+## Notes (989 characters, the box caps at 1000)
 
 ```
-Recant checks a new statement against every earlier statement by the SAME author, and names the one it contradicts. In March an organisation says "we will never sell user data"; in October it says "we share data with partners". Each reads fine alone. Consensus makes this worse, not better: every validator sees only the new statement, so five nodes agree confidently on a claim that fights something the same contract recorded months ago. The block receives the new statement AND the numbered record, and returns ONE INTEGER: the index it contradicts, or none. The judgment is hard; the thing crossing consensus is a number. Two validator layers: a free structural check (in range, not self, no duplicate) before any prompt, then exact agreement on the indices, never on "both found something". Withdrawn statements yield stale, not contradicts. Deployed at 0x2b4367c45ec6CD309BdEEE5eC7bFd2f20A63A3F7 on studionet.
+Recant checks a new statement against every earlier statement by the same author, and names the one it contradicts, so a record that grows over months stays answerable to itself. In March an organisation says it will never sell user data, in October it says it shares data with partners, and each reads fine alone, because the contradiction lives in the pair rather than in either half. Recant is what holds the pair: the block receives the new statement and the author's numbered record together, and returns one integer, the index it contradicts, or none, so the judgment stays hard while the thing crossing consensus stays a number. Two validator layers carry it, a free structural check for range, self-reference and duplicates before any prompt is spent, then exact agreement on the indices themselves, never on whether both nodes merely found something. Withdrawn statements yield stale rather than contradicts, because an author who changed their mind in public is a different fact.
 ```
 
 ## Links

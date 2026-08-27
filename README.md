@@ -20,16 +20,20 @@ In March an organisation says "we will never sell user data". In October it says
 unremarkable. **The contradiction exists only in the pair, and nobody holds both
 at once.**
 
-**Validator consensus makes this worse rather than better**, because it is very
-good at agreeing about the wrong thing. Every validator sees only the new
-statement. The earlier record is not part of the input at all, so five nodes
-confidently agree on a claim that fights something the same contract recorded two
+**Consensus settles the judgment it is handed, and this one is handed half the
+input.** Every validator sees the new statement on its own. The earlier record
+is not part of the input at all, so five nodes agree, correctly and
+confidently, on a claim that fights something the same contract recorded two
 months ago.
 
-The agreement is real. The consistency is absent.
+The agreement is real. The consistency is absent, and it is absent because of
+what the block was given rather than because of how the nodes agreed on it.
 
-> Consensus makes one judgment reliable. Nothing makes the next one agree with
-> the last.
+> Consensus makes one judgment reliable. Handing it the record is what makes the
+> next one agree with the last.
+
+That is the whole of what Recant does: it puts the record in front of the
+validators, in a shape they can agree on exactly.
 
 ## How consensus is used
 
