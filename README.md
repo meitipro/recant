@@ -6,7 +6,7 @@ A reusable primitive that checks a new statement against every earlier statement
 
 - **Contract:** [`contracts/recant.py`](contracts/recant.py)
 - **Tests:** `pip install pytest && pytest tests/ -q` — nothing else to install
-- **Deployed:** `{address}` on studionet ([explorer](https://explorer-studio.genlayer.com/address/{address}))
+- **Deployed:** `0x2b4367c45ec6CD309BdEEE5eC7bFd2f20A63A3F7` on studionet ([explorer](https://explorer-studio.genlayer.com/address/0x2b4367c45ec6CD309BdEEE5eC7bFd2f20A63A3F7))
 - **Specification:** [CONTRACTS.md](CONTRACTS.md)
 - **Decisions and limits:** [DECISIONS.md](DECISIONS.md)
 - **License:** MIT. Copy the agreement rule; that is what it is for.
@@ -81,6 +81,29 @@ statement is not inconsistent at all: it is the author having already changed
 their mind, in public, on the record. Withdrawing does not delete, because a
 statement that was made and then taken back is a different fact from a statement
 never made.
+
+### All four, on chain
+
+The deployed record at
+[`0x2b4367c45ec6CD309BdEEE5eC7bFd2f20A63A3F7`](https://explorer-studio.genlayer.com/address/0x2b4367c45ec6CD309BdEEE5eC7bFd2f20A63A3F7)
+carries one author and four statements, checked in order:
+
+| Statement | Verdict | Against |
+|---|---|---|
+| "We will never sell or share user data with any third party." | `clear` | — |
+| "Our uptime target for the coming year is ninety nine percent." | `clear` | — |
+| "We share user data with selected commercial partners." | `contradicts` | `0` |
+| "We share user data with commercial partners under contract." | `stale` | `0` |
+
+Rows three and four say the same thing. Between them the author withdrew the
+first statement, so the same claim comes back `stale` instead of `contradicts`
+— from a withdrawal flag the block never sees. Read it back yourself with
+`consistency(0)`, which returns `inconsistent_pct: 25`.
+
+On `check(3)` two of five validators voted **disagree** with no error anywhere:
+they ran the prompt, reached a different set of indices, and layer 2 declined to
+call that agreement. The transaction finalized on the majority. That is the
+refusal path on a live network, not in a simulator.
 
 ## Why this is not a thin LLM wrapper
 
