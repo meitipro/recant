@@ -7,31 +7,35 @@ one standalone primitive.
 
 ## Before you submit, in order
 
-1. **Deploy and exercise.** `./scripts/deploy.sh studionet`, or paste
-   `contracts/recant.py` into studio.genlayer.com and call the methods through
-   the form. **Never put a private key into a file or hand one to a tool.**
+1. **Measure, do not estimate.**
 
-2. **Get both paths on chain.** A success and a refusal:
-
-   ```
-   register("Example Org")
-   state(0, "We will never sell or share user data with any third party.")
-   state(0, "Our uptime target for the coming year is ninety nine percent.")
-   state(0, "We share user data with selected commercial partners.")
-   check(0)   -> clear, and spends no inference at all
-   check(1)   -> clear
-   check(2)   -> contradicts, against "0"        <- the one that matters
-   withdraw(0)
-   state(0, "We share user data with commercial partners under contract.")
-   check(3)   -> stale                            <- the refusal path
+   ```bash
+   python scripts/measure.py --write
    ```
 
-3. **Open the explorer page.** It must show a Deploy transaction **and** method
-   calls with a Consensus Result beside them. A page with only a deploy proves
-   the file compiles and nothing else.
+   Runs the suite, runs the full mutation pass, and writes both numbers into
+   README.md. It refuses to write anything if the suite is red or a mutation
+   escapes, so a number in the README is always one that was checked.
 
-4. **Paste the address** into README.md and this file wherever `{address}`
-   appears, then push.
+2. **Deploy and exercise.** Through the Studio web interface at
+   studio.genlayer.com, or `./scripts/deploy.sh studionet` for the CLI route.
+   Never put a private key into a file.
+
+3. **Put a refusal on chain, not only a success.** The story the script tells is
+   the submission: three statements where the third fights the first, then the
+   author withdraws the original and says it again, so the same words come back
+   `stale` instead of `contradicts`. A page showing only successes proves the
+   file compiles and nothing else.
+
+4. **Open the explorer page and check it.** It must show a Deploy transaction
+   **and** method calls with a Consensus Result beside them, and no failed or
+   abandoned transaction.
+
+5. **Paste the address** into README.md and into this file, replacing every
+   `{address}` placeholder, then push.
+
+6. **Upload `brand/social.png`** under Settings → General → Social preview.
+   GitHub has no API for this, so it is the one step that must be done by hand.
 
 ---
 
@@ -50,8 +54,11 @@ Recant checks a new statement against every earlier statement by the SAME author
 ## Links
 
 ```
-GitHub:   https://github.com/meitipro/genlayer-recant
-Contract: https://github.com/meitipro/genlayer-recant/blob/main/contracts/recant.py
+GitHub:   https://github.com/meitipro/recant
+Contract: https://github.com/meitipro/recant/blob/main/contracts/recant.py
+Spec:     https://github.com/meitipro/recant/blob/main/CONTRACTS.md
+Decisions https://github.com/meitipro/recant/blob/main/DECISIONS.md
+Tests:    https://github.com/meitipro/recant/tree/main/tests
 Explorer: https://explorer-studio.genlayer.com/address/{address}
 ```
 

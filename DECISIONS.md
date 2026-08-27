@@ -161,6 +161,27 @@ contract as defence in depth, and it is **not** in the mutation table, because a
 test that cannot fail is worse than no test -- it reports coverage it does not
 provide.
 
+
+### The deploy script did not run
+
+Three things in `scripts/deploy.sh`, none of them in the contract, each of which
+kills the script before it reaches the network:
+
+`genlayer network studionet` answers *unknown command* and exits 1, because
+`network` is a command group -- it is `network set`. `genvm-lint <file>` takes a
+legacy path and dies on a traceback; it needs its `lint` subcommand, and
+`PYTHONIOENCODING=utf-8`, because the linter prints a U+2713 on success and
+cannot encode it under the cp1252 stdout Windows hands a child process, which
+reports a *passing* contract as failed.
+
+The third is the one worth remembering. `--args` is **variadic**: the parser
+JSON-decodes each token and appends an array or object as ONE argument. So
+`--args '[0,"text"]'` passes a single two-item array where the method wanted two
+parameters, and `--args '[]'` passes an empty array to a constructor that takes
+nothing. Every call in the script was written that way. They are now separate
+tokens, verified by running the script against a stub that prints its argv
+rather than by reading it.
+
 ---
 
 ## GenVM constraints this contract obeys
