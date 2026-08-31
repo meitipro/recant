@@ -7,6 +7,8 @@ A reusable primitive that checks a new statement against every earlier statement
 - **Contract:** [`contracts/recant.py`](contracts/recant.py)
 - **Tests:** `pip install pytest && pytest tests/ -q` — nothing else to install
 - **Deployed:** `{address}` on studionet ([explorer](https://explorer-studio.genlayer.com/address/{address}))
+- **Verify a deployment:** `python scripts/verify_deployment.py 0x…` — diffs the
+  on-chain source against this file
 - **Specification:** [CONTRACTS.md](CONTRACTS.md)
 - **Decisions and limits:** [DECISIONS.md](DECISIONS.md)
 - **License:** MIT. Copy the agreement rule; that is what it is for.

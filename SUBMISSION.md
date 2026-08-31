@@ -31,9 +31,21 @@ one standalone primitive.
    **and** method calls with a Consensus Result beside them, and no failed or
    abandoned transaction.
 
-5. **Paste the address** into README.md and into this file, then push.
+5. **Prove the address is evidence for this repository.**
 
-6. **Upload `brand/social.png`** under Settings → General → Social preview.
+   ```bash
+   python scripts/verify_deployment.py 0xYourAddress
+   ```
+
+   Reads the source back out of the deploy transaction on chain, diffs it
+   against `contracts/recant.py`, and runs `genvm-lint lint` on those bytes. A
+   submission is judged on the deployed source, so a correct repository proves
+   nothing on its own if the address points at an earlier draft. Exits non-zero
+   if either check fails.
+
+6. **Paste the address** into README.md and into this file, then push.
+
+7. **Upload `brand/social.png`** under Settings → General → Social preview.
    GitHub has no API for this, so it is the one step that must be done by hand.
 
 
