@@ -195,7 +195,7 @@ pytest tests/ -q
 ```
 
 <!-- measured:tests -->
-`pytest tests/ -q` reports **137 passed, 1 skipped**, and every one of the **37** mutations below is caught.
+`pytest tests/ -q` reports **147 passed, 1 skipped**, and every one of the **42** mutations below is caught.
 <!-- /measured:tests -->
 
 **`tests/test_logic.py`** — the pure rules, exhaustively. They are module-level
@@ -261,6 +261,11 @@ a scratch copy of the repository and records which test caught it.
 | the cap counted in the same pass that finds the row | `test_the_cap_survives_a_revoke_and_reauthorise_cycle` |
 | the delegate cap removed | `test_the_cap_survives_a_revoke_and_reauthorise_cycle` |
 | a malformed delegate address passed to Address() | `test_a_malformed_delegate_address_is_refused_cleanly` |
+| the prompt fence removed, so a caller can forge a block | `test_the_author_label_is_fenced_too` |
+| the fence deletes instead of replacing | `test_fence_replaces_rather_than_deletes` |
+| only the opening bracket fenced | `test_fence_replaces_rather_than_deletes` |
+| the statement reaches the model unfenced | `test_an_injected_closing_tag_cannot_close_a_block` |
+| the record block reaches the model unfenced | `test_the_record_block_is_fenced_too` |
 | a nested mapping returned from the block | `test_a_consistent_statement_is_clear` |
 | a bool returned from the block | `test_a_consistent_statement_is_clear` |
 | a collection nested back into a storage dataclass | `test_the_first_statement_is_clear_without_a_model` |

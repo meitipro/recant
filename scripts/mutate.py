@@ -218,6 +218,33 @@ MUTATIONS = [
     # out of range anyway. Removing the check changes no outcome, so no test can
     # catch it and claiming one would be a lie. It stays in the contract as
     # defence in depth. See DECISIONS.md.
+    # -- the prompt boundary. Tagging untrusted text and telling the model it is
+    # -- data is not a fence unless the characters that close a tag go too.
+    (
+        "the prompt fence removed, so a caller can forge a block",
+        '    return str(raw).replace("<", "(").replace(">", ")")',
+        "    return str(raw)",
+    ),
+    (
+        "the fence deletes instead of replacing",
+        '    return str(raw).replace("<", "(").replace(">", ")")',
+        '    return str(raw).replace("<", "").replace(">", "")',
+    ),
+    (
+        "only the opening bracket fenced",
+        '    return str(raw).replace("<", "(").replace(">", ")")',
+        '    return str(raw).replace("<", "(")',
+    ),
+    (
+        "the statement reaches the model unfenced",
+        "{fence(subject)}",
+        "{subject}",
+    ),
+    (
+        "the record block reaches the model unfenced",
+        "{fence(numbered_scope)}",
+        "{numbered_scope}",
+    ),
     (
         "a nested mapping returned from the block",
         "                \"because\": sanitise_reason(out.get(\"because\", \"\")),",

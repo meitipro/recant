@@ -221,6 +221,8 @@ class _Runtime:
         self.datetime = "2026-08-21T10:00:00Z"
         self.last_validator_verdict = None
         self.block_runs = 0
+        self.leader_payload = None      # see set_leader_payload
+        self.validator_prompt_calls = 0
 
 
 RT = _Runtime()
@@ -287,8 +289,19 @@ def _run_nondet_unsafe(leader_fn, validator_fn):
         leaders_res = ContractError(str(e))
         leader_out = None
 
+    # A leader is a peer, not a library. What reaches a validator is whatever
+    # the leader put on the wire, which need not be anything the leader's own
+    # code could produce: a patched node, a different build, a deliberate lie.
+    # Without this, every shape check a validator runs is unreachable in the
+    # simulator, and a defence that cannot be exercised looks identical to one
+    # that is not there.
+    if RT.leader_payload is not None and isinstance(leaders_res, Return):
+        leaders_res = Return(RT.leader_payload)
+
     RT.active = RT.validator_env
+    before = len(RT.validator_env.prompt_calls)
     verdict = bool(validator_fn(leaders_res))
+    RT.validator_prompt_calls = len(RT.validator_env.prompt_calls) - before
     RT.last_validator_verdict = verdict
     RT.active = None
 
@@ -296,7 +309,11 @@ def _run_nondet_unsafe(leader_fn, validator_fn):
         raise UserError("validators did not agree with the leader")
     if not isinstance(leaders_res, Return):
         raise UserError("leader failed")
-    return leader_out
+    # What gets stored is the value consensus settled on, which is the LEADER'S
+    # PROPOSAL and not the leader's honest internal state. Returning leader_out
+    # here would quietly repair a lie that the validators had already let
+    # through, and hide whichever defence downstream was meant to catch it.
+    return leaders_res.calldata
 
 
 # ---------------------------------------------------------------------------
@@ -534,6 +551,26 @@ def set_mocks(leader_pages=None, leader_prompts=None,
     )
     RT.block_runs = 0
     RT.last_validator_verdict = None
+    RT.leader_payload = None
+    RT.validator_prompt_calls = 0
+
+
+def set_leader_payload(payload):
+    """Make the validator receive `payload` instead of the leader's real return.
+
+    For testing the layers a validator runs against a leader it does not trust.
+    Pass None to go back to honest behaviour.
+    """
+    RT.leader_payload = payload
+
+
+def validator_prompt_calls():
+    """How many prompts the validator spent on the last block.
+
+    A free structural layer is only worth having if it is actually free, and
+    the only observable difference between having it and not is this number.
+    """
+    return RT.validator_prompt_calls
 
 
 def set_sender(addr):
