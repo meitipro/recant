@@ -195,7 +195,7 @@ pytest tests/ -q
 ```
 
 <!-- measured:tests -->
-`pytest tests/ -q` reports **151 passed, 1 skipped**, and every one of the **44** mutations below is caught.
+`pytest tests/ -q` reports **154 passed, 1 skipped**, and every one of the **45** mutations below is caught.
 <!-- /measured:tests -->
 
 **`tests/test_logic.py`** — the pure rules, exhaustively. They are module-level
@@ -247,6 +247,7 @@ a scratch copy of the repository and records which test caught it.
 | the scope cap removed, so an unbounded prompt is built | `test_the_scope_is_capped_at_the_most_recent_MAX_SCOPE` |
 | the view bounds check removed | `test_a_read_with_a_nonexistent_id_is_a_user_error` |
 | negative ids allowed through to Python list indexing | `test_a_read_with_a_negative_id_does_not_return_the_last_record` |
+| the contract edited without regenerating the lifted copy | `test_every_lifted_function_is_identical_to_the_contract` |
 | a contradiction blocks any further statement on the record | `test_the_author_answers_a_contradiction_by_withdrawing_and_restating` |
 | withdrawing a marked statement erases its verdict | `test_withdrawing_the_statement_that_was_marked_leaves_the_mark` |
 | anyone allowed to withdraw | `test_only_the_registrar_may_withdraw` |

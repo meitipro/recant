@@ -20,12 +20,14 @@ HOW IT LOADS THE CONTRACT
     Run with:  pytest tests/test_logic.py -v
 """
 
+import ast
 import pathlib
 import types
 
 import pytest
 
 CONTRACT = pathlib.Path(__file__).resolve().parent.parent / "contracts" / "recant.py"
+LIB = pathlib.Path(__file__).resolve().parent.parent / "lib" / "recant_consensus.py"
 
 
 def load_pure():
@@ -415,3 +417,46 @@ class TestFencing:
             if src in params:
                 unfenced.append(src)
         assert not unfenced, "reaches the model unfenced: %s" % unfenced
+
+
+# =========================================================================
+# lib/ parity. The lifted module claims to be these rules; if it drifts,
+# somebody copies a rule this contract does not run.
+# =========================================================================
+
+class TestLibParity:
+    """lib/recant_consensus.py claims to be these rules, lifted out to be
+    copied. If it drifts, somebody copies a rule this contract does not use."""
+
+    def _defs(self, path):
+        tree = ast.parse(pathlib.Path(path).read_text(encoding="utf-8"))
+        return {n.name: ast.dump(n) for n in tree.body
+                if isinstance(n, ast.FunctionDef)}
+
+    def test_every_lifted_function_is_identical_to_the_contract(self):
+        contract = self._defs(str(CONTRACT))
+        lib = self._defs(str(LIB))
+        assert lib, "the lifted module has no functions in it"
+        for name, dumped in lib.items():
+            assert name in contract, f"{name} is in lib/ and not in the contract"
+            assert dumped == contract[name], f"{name} has drifted from the contract"
+
+    def test_it_lifts_the_rules_that_matter(self):
+        lib = self._defs(str(LIB))
+        for name in ("classify", "recant_agrees", "structurally_sound",
+                     "parse_indices", "fence", "build_prompt"):
+            assert name in lib
+
+    def test_the_lifted_module_holds_no_storage_and_no_contract(self):
+        """Checked against the parsed tree, not against the text. A substring
+        search hits the word 'itself.' in a docstring and fails a clean file,
+        which is a test that cries wolf until somebody deletes it."""
+        tree = ast.parse(pathlib.Path(str(LIB)).read_text(encoding="utf-8"))
+        assert not [n for n in tree.body if isinstance(n, ast.ClassDef)]
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Attribute):
+                src = ast.unparse(node)
+                assert not src.startswith("self."), f"{src} touches storage"
+                assert not src.startswith("gl."), f"{src} is not pure"
+            if isinstance(node, ast.Name):
+                assert node.id not in ("DynArray", "TreeMap", "allow_storage")
