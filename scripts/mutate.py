@@ -119,6 +119,19 @@ MUTATIONS = [
         "        if i < 0 or i >= len(self.statements):",
         "        if i >= len(self.statements):",
     ),
+    # -- recourse. An adverse verdict has to leave the author somewhere to go.
+    (
+        "a contradiction blocks any further statement on the record",
+        "        a.n_statements = a.n_statements + u256(1)",
+        "        if int(a.n_contradicts) > 0:\n"
+        "            raise gl.vm.UserError(\"record closed\")\n"
+        "        a.n_statements = a.n_statements + u256(1)",
+    ),
+    (
+        "withdrawing a marked statement erases its verdict",
+        "        s.withdrawn = True",
+        "        s.withdrawn = True\n        s.verdict = \"\"",
+    ),
     (
         "anyone allowed to withdraw",
         "        if gl.message.sender_address != a.registrar:\n            raise gl.vm.UserError(\"only the registrar may withdraw a statement\")\n",

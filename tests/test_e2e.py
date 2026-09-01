@@ -167,6 +167,92 @@ class TestRecant:
         with pytest.raises(S.UserError, match="already withdrawn"):
             S.call(c, "withdraw", 0)
 
+    # -- recourse -----------------------------------------------------------
+    #
+    # `check()` is open to anybody and a statement is checked exactly once, so
+    # a third party can settle a verdict the author would rather have reached
+    # differently. That is deliberate -- an author who chose which of their own
+    # statements got audited would only audit the flattering ones -- but it is
+    # only defensible if the author has a route afterwards. These test the
+    # route, because a path nobody exercises is a path an edit can close with
+    # the rest of the suite still green.
+
+    def test_the_author_answers_a_contradiction_by_withdrawing_and_restating(self):
+        """The whole journey. A stranger settles `contradicts` on a statement
+        while the earlier promise is still live; the author retracts the
+        promise in public, says the thing again, and the record now reads
+        `stale` -- which is the true description of an author who changed their
+        mind rather than one who contradicted themselves."""
+        c = self.deploy()
+        S.call(c, "state", 0, S0)
+        S.call(c, "state", 0, S2)
+
+        S.set_sender(self.STRANGER)
+        try:
+            self.mocks(says("0"))
+            S.call(c, "check", 1)
+        finally:
+            S.set_sender(self.REGISTRAR)
+        assert c.verdict(1) == "contradicts"
+        assert c.consistency(0)["inconsistent_pct"] == 100
+
+        S.call(c, "withdraw", 0)
+        S.call(c, "state", 0, S2)
+        self.mocks(says("0"))
+        S.call(c, "check", 2)
+        assert c.verdict(2) == "stale"
+
+        # the earlier mark stays on the record, and the rate moves
+        rec = c.consistency(0)
+        assert rec["contradicts"] == 1 and rec["stale"] == 1
+        assert rec["inconsistent_pct"] == 50
+
+    def test_a_verdict_cannot_be_replayed_into_a_better_one(self):
+        """The other half. Somewhere to go must not mean checking again until
+        the answer suits: the recourse is a new statement on the record, never
+        a second opinion on an old one."""
+        c = self.deploy()
+        S.call(c, "state", 0, S0)
+        S.call(c, "state", 0, S2)
+        self.mocks(says("0"))
+        S.call(c, "check", 1)
+        for who in (self.REGISTRAR, self.STRANGER):
+            S.set_sender(who)
+            try:
+                self.mocks(says("none"))
+                with pytest.raises(S.UserError, match="already checked"):
+                    S.call(c, "check", 1)
+            finally:
+                S.set_sender(self.REGISTRAR)
+        assert c.verdict(1) == "contradicts"
+
+    def test_withdrawing_the_statement_that_was_marked_leaves_the_mark(self):
+        """Retracting what you said does not retract the finding that you said
+        it. The record is a history, and a mark that could be erased by its
+        subject would not be worth reading."""
+        c = self.deploy()
+        S.call(c, "state", 0, S0)
+        S.call(c, "state", 0, S2)
+        self.mocks(says("0"))
+        S.call(c, "check", 1)
+        S.call(c, "withdraw", 1)
+        assert c.verdict(1) == "contradicts"
+        assert c.latest(1)["withdrawn"] is True
+        assert c.consistency(0)["contradicts"] == 1
+
+    def test_a_record_keeps_working_after_an_unwanted_verdict(self):
+        """Nothing about an adverse mark stops the record being used."""
+        c = self.deploy()
+        S.call(c, "state", 0, S0)
+        S.call(c, "state", 0, S2)
+        self.mocks(says("0"))
+        S.call(c, "check", 1)
+        S.call(c, "state", 0, S1)
+        self.mocks(says("none"))
+        S.call(c, "check", 2)
+        assert c.verdict(2) == "clear"
+        assert c.consistency(0)["checked"] == 2
+
     # -- authority ----------------------------------------------------------
     #
     # A verdict about an author is only worth the record it was computed from,

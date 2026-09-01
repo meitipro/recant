@@ -250,6 +250,35 @@ injection surface and the function did nothing about it**, and a suite of 137
 tests went green over the top of that for as long as it existed. Grep for prose
 that identifies an attack surface, then check whether any code acts on it.
 
+## An adverse verdict leaves the author somewhere to go
+
+Added after a sibling project was rejected for the opposite: a contract whose
+appeal path existed in the source and was unreachable on every round anybody
+actually ran.
+
+`check()` is open to anybody and a statement is checked exactly once, so a third
+party can settle `contradicts` on a statement while the earlier promise is still
+live — before the author has withdrawn it. That is deliberate, because an author
+who chose which of their own statements got audited would only audit the
+flattering ones. It is only defensible because the route out exists:
+
+**withdraw the earlier promise, say the thing again, check it.** The new
+statement reads `stale`, which is the true description of an author who changed
+their mind rather than one who contradicted themselves, and the published rate
+moves with it.
+
+What the route deliberately is NOT:
+
+- a re-check. The recourse is a new statement on the record, never a second
+  opinion on an old one, or a caller could replay until the answer suited.
+- an erasure. Withdrawing a statement that was marked leaves the mark: retracting
+  what you said does not retract the finding that you said it, and a mark its own
+  subject could delete would not be worth reading.
+
+Tested as a journey rather than as a single call, and two mutations that close
+the route are caught. A path nobody exercises is a path an edit can shut with the
+suite still green.
+
 ### The deploy script did not run
 
 Three things in `scripts/deploy.sh`, none of them in the contract, each of which
