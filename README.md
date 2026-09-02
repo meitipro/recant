@@ -221,6 +221,18 @@ Every mocking framework feeds both nodes the same data by default, which is
 exactly why a contract that quietly assumes both nodes see identical bytes
 passes its suite and fails on a real network.
 
+**`tests/test_integration.py`** — the same contract against a live GenLayer
+Studio, via `genlayer-test`. It is **opt in**, and deliberately so: it skips
+when `genlayer-test` is absent, and also when `genlayer-test` is present without
+a Studio to talk to. Otherwise anybody who reviews GenLayer contracts, and
+therefore has the plugin installed, would see a wall of connection errors on a
+repository that promises an offline run.
+
+```bash
+pip install genlayer-test
+GENLAYER_STUDIO=1 gltest --network studionet tests/test_integration.py
+```
+
 ### The tests have teeth
 
 Every safety property was broken on purpose to confirm a test notices. The
