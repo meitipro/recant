@@ -93,6 +93,70 @@ being closed, are in [DECISIONS.md](DECISIONS.md).
 
 ---
 
+## On chain
+
+Deployed and exercised on studionet at
+[`0x70A9197A6b2c573C3Bdb12182Ac36f0feE9622f9`](https://explorer-studio.genlayer.com/address/0x70A9197A6b2c573C3Bdb12182Ac36f0feE9622f9).
+Thirteen transactions, every one `FINALIZED`, no failed or abandoned transaction
+on the page. Every value below was read back from the chain with view calls
+after the fact, not copied from a local run.
+
+| # | Transaction | Result |
+|---|---|---|
+| 1 | deploy | finalized |
+| 2 | `register("Example Org")` | record 0 opens, registrar recorded |
+| 3 | `state(0, "We will never sell or share user data with any third party.")` | statement 0 |
+| 4 | `state(0, "Our uptime target for the coming year is ninety nine percent.")` | statement 1 |
+| 5 | `state(0, "We share user data with selected commercial partners.")` | statement 2 |
+| 6 | `check(0)` | `clear` — first on the record, no inference spent |
+| 7 | `check(1)` | `clear` — unrelated subject |
+| 8 | `check(2)` | **`contradicts`**, `against` = `0` |
+| 9 | `withdraw(0)` | statement 0 marked withdrawn, still readable |
+| 10 | `state(0, "We share user data with commercial partners under contract.")` | statement 3 |
+| 11 | `check(3)` | **`stale`**, `against` = `0` |
+| 12 | `authorise(0, 0x7777…)` | delegate added |
+| 13 | `revoke(0, 0x7777…)` | delegate deactivated, row kept |
+
+Rows 8 and 11 are the point. Statement 2 and statement 3 say the same thing;
+between them the author withdrew the promise they both fight. The first is a
+live contradiction, the second is a contradiction with something already
+retracted, and the contract tells them apart without being told which is which.
+Only a withdrawal flag differs, and the block never sees it.
+
+`consistency(0)` returns:
+
+```json
+{"statements": 4, "checked": 4, "clear": 2, "contradicts": 1,
+ "conflict": 0, "stale": 1, "inconsistent_pct": 25}
+```
+
+### The provenance model, exercised
+
+The first submission was rejected because `state()` had no sender check. Rows 12
+and 13 put the replacement on chain: `delegation(0)` reads
+
+```json
+{"registrar": "0x3e1D268c8B1Ba7d042968ab713467C5631831513",
+ "delegates": [{"who": "0x7777777777777777777777777777777777777777", "active": false}]}
+```
+
+A revoked delegate keeps its row, so a delegation that existed stays visible.
+Every statement also carries the account that submitted it, readable through
+`latest()` and `record()`.
+
+### Reproducing the check
+
+```bash
+python scripts/verify_deployment.py 0x70A9197A6b2c573C3Bdb12182Ac36f0feE9622f9
+```
+
+Reads the source out of the deploy transaction, compares it to
+`contracts/recant.py`, and runs `genvm-lint lint` on those bytes. It reports the
+deployed source as identical: pasting into the Studio editor rewrote the line
+endings and dropped the final newline, and nothing runs either of those.
+
+---
+
 ## Title
 
 ```
@@ -113,7 +177,7 @@ Contract: https://github.com/meitipro/recant/blob/main/contracts/recant.py
 Spec:     https://github.com/meitipro/recant/blob/main/CONTRACTS.md
 Decisions https://github.com/meitipro/recant/blob/main/DECISIONS.md
 Tests:    https://github.com/meitipro/recant/tree/main/tests
-Explorer: https://explorer-studio.genlayer.com/address/{address}
+Explorer: https://explorer-studio.genlayer.com/address/0x70A9197A6b2c573C3Bdb12182Ac36f0feE9622f9
 ```
 
 ---

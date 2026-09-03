@@ -6,13 +6,58 @@ A reusable primitive that checks a new statement against every earlier statement
 
 - **Contract:** [`contracts/recant.py`](contracts/recant.py)
 - **Tests:** `pip install pytest && pytest tests/ -q` — nothing else to install
-- **Deployed:** `{address}` on studionet ([explorer](https://explorer-studio.genlayer.com/address/{address}))
+- **Deployed:** [`0x70A9197A6b2c573C3Bdb12182Ac36f0feE9622f9`](https://explorer-studio.genlayer.com/address/0x70A9197A6b2c573C3Bdb12182Ac36f0feE9622f9) on studionet
 - **Deploying it yourself:** [DEPLOY.md](DEPLOY.md) — the contract, the demo, and the check to run before submitting
 - **Verify a deployment:** `python scripts/verify_deployment.py 0x…` — diffs the
   on-chain source against this file
 - **Specification:** [CONTRACTS.md](CONTRACTS.md)
 - **Decisions and limits:** [DECISIONS.md](DECISIONS.md)
 - **License:** MIT. Copy the agreement rule; that is what it is for.
+
+---
+
+## It is live, and every outcome is on chain
+
+One record, four statements by one author, judged in order. Two came back clear,
+one contradicts, one stale.
+
+**Statement 2** — "We share user data with selected commercial partners."
+
+```
+verdict: contradicts   against: 0
+```
+
+It fights statement 0, "We will never sell or share user data with any third
+party." The contract names the statement rather than reporting that a conflict
+exists somewhere, because two nodes naming different statements have agreed
+about nothing worth recording.
+
+**Statement 3** — "We share user data with commercial partners under contract."
+
+```
+verdict: stale   against: 0
+```
+
+The same claim as statement 2. Between them the author **withdrew** statement 0,
+so the thing it fights is no longer live: this is not an inconsistency, it is an
+author who changed their mind in public and on the record. Nothing the model saw
+distinguished the two calls. The difference is a withdrawal flag in storage,
+which the block is never shown.
+
+**Statement 0** cost no inference at all. The first statement on a record has
+nothing to be inconsistent with, so the contract answers `clear` deterministically
+and never opens a block.
+
+`consistency(0)` now reads:
+
+```json
+{"statements": 4, "checked": 4, "clear": 2, "contradicts": 1,
+ "conflict": 0, "stale": 1, "inconsistent_pct": 25}
+```
+
+Thirteen transactions, every one `FINALIZED`, no failed or abandoned transaction
+on the page. Call `latest(2)` and `latest(3)` on the deployed contract to see
+both, with the reasons the leader stored.
 
 ---
 

@@ -111,13 +111,17 @@ If it prints anything else, do not submit that address.
 
 ---
 
-## 5 · Send the address
+## 5 · Done
 
-Send it over and I will read the state back off the chain, confirm the outcomes
-above, fill the `{address}` placeholders in README.md and SUBMISSION.md, write
-the on-chain section from what the chain actually returned, and push.
+This has been run. The contract is live at
+[`0x70A9197A6b2c573C3Bdb12182Ac36f0feE9622f9`](https://explorer-studio.genlayer.com/address/0x70A9197A6b2c573C3Bdb12182Ac36f0feE9622f9),
+thirteen transactions, every one finalized, and every outcome above came back as
+described. `verify_deployment.py` reports the deployed source as identical to
+`contracts/recant.py`, and the state read back off the chain is written up in
+[SUBMISSION.md](SUBMISSION.md#on-chain).
 
-**Nothing goes near the portal until that check is green.**
+The page is kept here because the next deployment of this contract, by anybody,
+should follow the same order and stop at the same checkpoint.
 
-One step stays manual either way: uploading `brand/social.png` under
+One step stays manual: uploading `brand/social.png` under
 Settings → General → Social preview. GitHub has no API for it.
